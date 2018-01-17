@@ -8,6 +8,7 @@ license       = "All Rights Reserved"
 # Dependencies
 
 requires "nim >= 0.17.2"
+requires "jester >= 0.2.0"
 
 skipDirs = @["test", "bootstrap"]
 
