@@ -9,6 +9,8 @@ license       = "All Rights Reserved"
 
 requires "nim >= 0.17.2"
 requires "jester >= 0.2.0"
+requires "redis >= 0.2.0"
+requires "emerald >= 0.2.2"
 
 skipDirs = @["test", "bootstrap"]
 
