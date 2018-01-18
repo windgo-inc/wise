@@ -1,3 +1,4 @@
+import macros, future
 import os, osproc, re, jester, htmlgen, asyncnet, random
 import strutils, streams
 import tables, hashes, redis, emerald
@@ -49,20 +50,46 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
         a(href=homeUrl): title
       block content: discard
 
-proc home() {.html_templ: page_template.} =
+proc docUploader() {.html_templ: page_template.} =
   title = "WISE Documentation Serializer"
   replace content:
     form(action="upload", `method`="post", enctype="multipart/form-data"):
       input(`type`="file", name="uploaded_file[]", multiple=true)
       input(`type`="submit", value="Upload")
 
-template respByTemplate(cons: untyped): untyped =
-  var
-    ss = newStringStream()
-    r = cons()
+proc identString(node: NimNode): string {.compileTime.} =
+  case node.kind:
+    of nnkAccQuoted:
+      result = $node[0]
+    of nnkIdent:
+      result = $node
+    of nnkStrLit, nnkRStrLit:
+      result = node.strVal
+    of nnkPostfix:
+      result = identString(node[1])
+    else:
+      quit "Bad token, expected identifier or string literal: " & $node.kind
 
-  r.render(ss)
-  resp(ss.data)
+proc prefixIdent(name: string, pfx: string): NimNode {.compileTime.} =
+  ident(pfx & name)
+
+
+template genHtmlByCons(cons: untyped): untyped =
+  block:
+    var
+      ss = newStringStream()
+      r = cons()
+      
+    r.render(ss)
+    ss.data
+
+macro genHtml(cons: string): untyped =
+  let stmts = newStmtList()
+  stmts.add(newLetStmt(ident"htmlStringStream", newCall(ident"newStringStream")))
+  stmts.add(newLetStmt(ident"htmlGenerator", newCall(prefixIdent(identString(cons), "new"))))
+  stmts.add(newCall(ident"render", ident"htmlGenerator", ident"htmlStringStream"))
+  stmts.add(newDotExpr(ident"htmlStringStream", ident"data"))
+  result = newBlockStmt(stmts)
 
 routes:
   get "/":
@@ -72,7 +99,12 @@ routes:
     echo "session_hash = ", session_hash
     echo "session_new = ",  session_new
 
-    respByTemplate(newHome)
+    #resp(genHtmlByCons(newDocUploader))
+    # Check the resultant code from the AST.
+    expandMacros:
+      dump(genHtml"docUploader")
+
+    resp: genHtml"docUploader"
 
   post "/upload":
     let (session_id, session_hash, session_new) = getSession()
