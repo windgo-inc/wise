@@ -98,6 +98,7 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
       h1:
         a(href=homeUrl): title
       block content: discard
+      block sync_assets: discard
 
 
 proc docUploader(pageTitle: string) {.html_templ: page_template.} =
@@ -114,6 +115,8 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
     ul:
       for filename in files:
         li: pre: filename
+  replace sync_assets:
+    script(src="/reorder.js")
 
 # ROUTING
 
