@@ -12,7 +12,7 @@ requires "jester >= 0.2.0"
 requires "redis >= 0.2.0"
 requires "emerald >= 0.2.2"
 
-skipDirs = @["test", "bootstrap"]
+skipDirs = @["test", "bootstrap", "public"]
 
 task tests, "Running all tests":
   exec "echo 'test/results/'`date +%Y%m%d-%H.%M.%S`'.test.txt' > tmp_filename"
