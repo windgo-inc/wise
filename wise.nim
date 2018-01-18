@@ -53,7 +53,7 @@ proc home() {.html_templ: page_template.} =
   title = "WISE Documentation Serializer"
   replace content:
     form(action="upload", `method`="post", enctype="multipart/form-data"):
-      input(`type`="file", name="my_file[]", multiple=true)
+      input(`type`="file", name="uploaded_file[]", multiple=true)
       input(`type`="submit", value="Upload")
 
 template respByTemplate(cons: untyped): untyped =
@@ -80,6 +80,8 @@ routes:
     echo "session_id = ",   session_id
     echo "session_hash = ", session_hash
     echo "session_new = ",  session_new
+
+    echo $request.formData
 
     resp($request.formData)#.getOrDefault("file").filename)
     #redirect("/")
