@@ -50,8 +50,8 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
         a(href=homeUrl): title
       block content: discard
 
-proc docUploader() {.html_templ: page_template.} =
-  title = "WISE Documentation Serializer"
+proc docUploader(pageTitle: string) {.html_templ: page_template.} =
+  title = pageTitle
   replace content:
     form(action="upload", `method`="post", enctype="multipart/form-data"):
       input(`type`="file", name="uploaded_file[]", multiple=true)
@@ -74,22 +74,47 @@ proc prefixIdent(name: string, pfx: string): NimNode {.compileTime.} =
   ident(pfx & name)
 
 
-template genHtmlByCons(cons: untyped): untyped =
-  block:
-    var
-      ss = newStringStream()
-      r = cons()
-      
-    r.render(ss)
-    ss.data
+#macro genHtml(cons: string): untyped =
+#  let stmts = newStmtList()
+#  stmts.add(newLetStmt(ident"htmlStringStream", newCall(ident"newStringStream")))
+#  stmts.add(newLetStmt(ident"htmlGenerator", newCall(prefixIdent(identString(cons), "new"))))
+#  stmts.add(newCall(ident"render", ident"htmlGenerator", ident"htmlStringStream"))
+#  stmts.add(newDotExpr(ident"htmlStringStream", ident"data"))
+#  result = newBlockStmt(stmts)
 
-macro genHtml(cons: string): untyped =
+
+macro genHtml(args: varargs[untyped]): untyped =
+  let args = callsite()
+  
+  if args.len < 2:
+    quit "Expected an argument list of length >= 1."
+
   let stmts = newStmtList()
+
   stmts.add(newLetStmt(ident"htmlStringStream", newCall(ident"newStringStream")))
-  stmts.add(newLetStmt(ident"htmlGenerator", newCall(prefixIdent(identString(cons), "new"))))
+  stmts.add(newLetStmt(ident"htmlGenerator", newCall(prefixIdent(identString(args[1]), "new"))))
+
+  for i in 2..<args.len:
+    if args[i].kind == nnkExprEqExpr:
+      stmts.add(newAssignment(newDotExpr(ident"htmlGenerator", args[i][0]), args[i][1]))
+    else:
+      quit "Bad argument to HTML generator, all arguments must be assignments: " & $args[i]
+
   stmts.add(newCall(ident"render", ident"htmlGenerator", ident"htmlStringStream"))
   stmts.add(newDotExpr(ident"htmlStringStream", ident"data"))
   result = newBlockStmt(stmts)
+
+
+#static:
+#  assignmentArgs(a=1, b=2, "hello", "world")
+#macro genHtmlAssignImpl(x: varargs[untyped]): untyped =
+#  let args = callsite()
+#  let stmts = newStmtList()
+#  for i in 1..<args.len:
+#    if args[i].kind == nnkExprEqExpr:
+#      echo "key=value pair"
+#    else:
+#      echo "unnamed argument"
 
 routes:
   get "/":
@@ -102,9 +127,9 @@ routes:
     #resp(genHtmlByCons(newDocUploader))
     # Check the resultant code from the AST.
     expandMacros:
-      dump(genHtml"docUploader")
+      dump(genHtml("docUploader", title="WISE Documentation Serializer"))
 
-    resp: genHtml"docUploader"
+    resp: genHtml("docUploader", pageTitle="WISE Documentation Serializer")
 
   post "/upload":
     let (session_id, session_hash, session_new) = getSession()
