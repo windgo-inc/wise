@@ -1,5 +1,3 @@
-# Issue #22
-
 import os, osproc, re, jester, htmlgen, asyncnet, random
 import strutils, streams
 import tables, hashes, redis, emerald
@@ -54,9 +52,17 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
 proc home() {.html_templ: page_template.} =
   title = "WISE Documentation Serializer"
   replace content:
-    form(action="upload", `method`="post" enctype="multipart/form-data"):
+    form(action="upload", `method`="post", enctype="multipart/form-data"):
       input(`type`="file", name="my_file[]", multiple=true)
       input(`type`="submit", value="Upload")
+
+template respByTemplate(cons: untyped): untyped =
+  var
+    ss = newStringStream()
+    r = cons()
+
+  r.render(ss)
+  resp(ss.data)
 
 routes:
   get "/":
@@ -66,21 +72,19 @@ routes:
     echo "session_hash = ", session_hash
     echo "session_new = ",  session_new
 
-    var html = ""
-    #for file in walkFiles("*.*"):
-    #  html.add "<li>" & file & "</li>"
-    html.add "<h3>UNIX and Windows compatible plaintext serializer."
-    html.add "<form action=\"upload\" method=\"post\"enctype=\"multipart/form-data\">"
-    html.add "<input type=\"file\" name=\"file\"value=\"file\">"
-    html.add "<input type=\"submit\" value=\"Submit\" name=\"submit\">"
-    html.add "</form>"
+    respByTemplate(newHome)
 
-    var
-      ss = newStringStream()
-      r = newHome()
+  post "/upload":
+    let (session_id, session_hash, session_new) = getSession()
 
-    r.render(ss)
-    resp(ss.data)
+    echo "session_id = ",   session_id
+    echo "session_hash = ", session_hash
+    echo "session_new = ",  session_new
+
+    resp($request.formData)#.getOrDefault("file").filename)
+    #redirect("/")
+    #respByTemplate(newHome)
+
 
     #resp(home())
 
