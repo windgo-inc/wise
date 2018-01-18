@@ -104,9 +104,16 @@ proc docUploader(pageTitle: string) {.html_templ: page_template.} =
   title = pageTitle
   replace content:
     form(action="upload", `method`="post", enctype="multipart/form-data"):
-      input(`type`="file", name="uploaded_file[]", multiple=true)
+      input(`type`="file", name="uploaded_files[]", multiple=true)
       input(`type`="submit", value="Upload")
 
+
+proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_template.} =
+  title = pageTitle
+  replace content:
+    ul:
+      for filename in files:
+        li: pre: filename
 
 # ROUTING
 
@@ -119,7 +126,8 @@ routes:
       echo "session_hash = ", session_hash
       echo "session_new = ",  session_new
 
-    resp: genHtml("docUploader", pageTitle="WISE Documentation Serializer")
+    resp:
+      genHtml("docUploader", pageTitle="WISE Documentation Serializer")
 
   post "/upload":
     let (session_id, session_hash, session_new) = getSession()
@@ -129,12 +137,13 @@ routes:
       echo "session_hash = ", session_hash
       echo "session_new = ",  session_new
 
-    echo $request.formData
+    var filenameList: seq[string] = @[]
 
-    resp($request.formData)#.getOrDefault("file").filename)
-    #redirect("/")
-    #respByTemplate(newHome)
+    for v in values(request.formData):
+      filenameList.add(v.fields["filename"])
 
+    resp:
+      genHtml("docPreview", pageTitle="WISE DS - Files Preview", files=filenameList)
 
     #resp(home())
 
