@@ -1,6 +1,6 @@
 import macros, future
 import os, osproc, re, jester, htmlgen, asyncnet, random
-import strutils, streams
+import sequtils, strutils, streams
 import tables, hashes, redis, emerald
 import asyncdispatch
 
@@ -8,12 +8,8 @@ const WISEMajorVersion = "0"
 const WISEMinorVersion = "1"
 const WISEVersion = WISEMajorVersion & "." & WISEMinorVersion
 
-let redisClient = redis.open()
-
-#type
-#  SessionData = int
-
-#var sessionTable = initTable[string, SessionData]()
+var
+  redisClient: Redis
 
 # UTILITIES
 
@@ -54,6 +50,7 @@ macro genHtml(args: varargs[untyped]): untyped =
 
   stmts.add(newCall(ident"render", ident"htmlGenerator", ident"htmlStringStream"))
   stmts.add(newDotExpr(ident"htmlStringStream", ident"data"))
+
   result = newBlockStmt(stmts)
 
 
@@ -63,14 +60,14 @@ template sessionIdKey(value: untyped): untyped =
   "wise:session_" & value
 
 
-proc startSession(): string =
+proc start_session(): string =
   let value = redisClient.incr("wise:session_counter")
   let r = !$(value.hash)
   result = $r
   redisClient.setk(sessionIdKey(result), $value)
 
 
-template getSession(): untyped =
+template get_session(): untyped =
   block:
     var session_hash: string
     var session_id: int
@@ -80,13 +77,17 @@ template getSession(): untyped =
       session_id = parseInt(redisClient.get(sessionIdKey(session_hash)))
       session_new = false
     except:
-      session_hash = startSession()
+      session_hash = start_session()
       session_id = parseInt(redisClient.get(sessionIdKey(session_hash)))
       session_new = true
       setCookie("wisesession", session_hash, daysForward(90))
 
     (session_id, session_hash, session_new)
 
+
+macro use_session(body: untyped): untyped =
+  result = newStmtList(parseStmt"let (session_id, session_hash, is_new_session) = get_session()")
+  result.add(body)
 
 # WEB PAGES
 
@@ -120,38 +121,92 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
 
 # ROUTING
 
+type
+  FileInfo = object
+    filename: string
+    mimetype: string
+    basename: string
+    extension: string
+    data: string
+
+  FileInfoRef = ref FileInfo
+
+proc hashFileInfo(info: FileInfoRef, session_hash: string): string {.noSideEffect.} =
+  let
+    filehash = [
+      session_hash,
+      info.filename,
+      info.mimetype,
+      info.data[0..min(311, info.data.len)]
+    ].join("//").hash
+
+  $(!$filehash)
+
+type
+  MultiDataValue = tuple[fields: StringTableRef, body: string]
+
+proc newFileInfo(x: var FileInfoRef, data: MultiDataValue) =
+  let filename = data.fields["filename"]
+  let extpos = filename.rfind('.')
+
+  new(x)
+  x.filename = filename
+  x.mimetype = data.fields["Content-Type"]
+  if extpos > -1:
+    x.extension = filename[extpos+1..^1]
+    x.basename = filename[0..<extpos]
+  else:
+    x.extension = nil
+    x.basename = filename
+  x.data = data.body
+
+
+proc newFileInfo(data: MultiDataValue): FileInfoRef =
+  newFileInfo(result, data)
+
+
+# The keys to this table are made from a hash of the session, filename, and data.
+# The files are only stored transiently.
+var fileTable = initTable[string, FileInfoRef]()
+var fileListTable = initTable[string, seq[string]]()
+
 routes:
   get "/":
-    let (session_id, session_hash, session_new) = getSession()
-
-    when defined(debug):
-      echo "session_id = ",   session_id
-      echo "session_hash = ", session_hash
-      echo "session_new = ",  session_new
-
-    resp:
-      genHtml("docUploader", pageTitle="WISE Documentation Serializer")
+    use_session:
+      resp:
+        genHtml("docUploader", pageTitle="WISE Documentation Serializer")
 
   post "/upload":
-    let (session_id, session_hash, session_new) = getSession()
+    use_session:
+      var fileList: seq[string]
+      newSeq(fileList, 0)
 
-    when defined(debug):
-      echo "session_id = ",   session_id
-      echo "session_hash = ", session_hash
-      echo "session_new = ",  session_new
+      for v in values(request.formData):
+        # Iterate through the files submitted and add the full FileInfo to the
+        # fileTable, and add the hash of each FileInfo to the fileList
+        let info = newFileInfo(v)
+        let file_hash = hashFileInfo(info, session_hash)
 
-    var filenameList: seq[string] = @[]
+        fileTable.add(file_hash, info)
+        fileList.add(file_hash)
+        #filenameList.add()
 
-    for v in values(request.formData):
-      filenameList.add(v.fields["filename"])
+      # Add the fileList to the fileListTable for the current session.
+      fileListTable.add(session_hash, fileList)
 
-    resp:
-      genHtml("docPreview", pageTitle="WISE DS - Files Preview", files=filenameList)
+      redirect"/order"
 
-    #resp(home())
+  get "/order":
+    use_session:
+      let fileInfoList = sequtils.map(fileListTable[session_hash], file_hash => fileTable[file_hash])
+      let filenameList = sequtils.map(fileInfoList, info => info.filename & " - " & info.mimetype & " : Hash=" & info.hashFileInfo(session_hash))
+
+      resp:
+        genHtml("docPreview", pageTitle="WISE DS - Files Preview", files=filenameList)
+
 
   #get "/@id":
-  #  let (session_id, session_hash, session_new) = getSession()
+  #  let (session_id, session_hash, session_new) = get_session()
   #  echo session_id
   #  echo session_hash
   #  echo session_new
@@ -168,6 +223,6 @@ routes:
   #  
   #  attachment("uploaded.pdf")
   #  resp(s)
-
+redisClient = redis.open()
 runForever()
 
