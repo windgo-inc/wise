@@ -176,7 +176,7 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
 proc docUploader(pageTitle: string) {.html_templ: page_template.} =
   title = pageTitle
   replace content:
-    form(action="upload", `method`="post", enctype="multipart/form-data"):
+    form(action="/upload", `method`="post", enctype="multipart/form-data"):
       input(`type`="file", name="uploaded_files[]", multiple=true)
       input(`type`="submit", value="Upload")
 
@@ -195,7 +195,7 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
           "   "
           span(id=["dn", $i].join): "[Down ↓]"
 
-    form(action="generate", `method`="post", enctype="application/x-www-form-urlencoded"):
+    form(action="/generate", `method`="post", enctype="application/x-www-form-urlencoded"):
       input(`type`="hidden", name="order", value="", id="genorder")
       input(`type`="submit", value="Generate PDF")
     
