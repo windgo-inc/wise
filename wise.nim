@@ -1,10 +1,10 @@
 import macros, future
 import os, osproc, re, jester, htmlgen, asyncnet, random
-import sequtils, strutils, streams
+import sequtils, strutils, streams, times
 import tables, hashes, redis, emerald
 import asyncdispatch
 
-import nimPDF
+import nimPDF/nimPDF
 
 
 # VERSION
@@ -31,6 +31,53 @@ type
 
   FileInfoRef = ref FileInfo
 
+  FileActionSeq = seq[tuple[info: FileInfoRef, action: FileAction]]
+
+
+# PDF GEN
+
+proc draw_title(doc: Document, text:string) =
+  let size = getSizeFromName("Letter")
+
+  doc.setFont("TimesNewRoman", {FS_BOLD}, 5)
+  let tw = doc.getTextWidth(text)
+  let x = size.width.toMM/2 - tw/2
+
+  doc.setRGBFill(0,0,0)
+  doc.drawText(x, 10.0, text)
+  doc.setRGBStroke(0,0,0)
+  doc.drawRect(10,15,size.width.toMM - 20, size.height.toMM-25)
+  doc.stroke()
+
+proc gen_pdf(session: string, actions: FileActionSeq): string =
+  var filename = "output-" & format(getLocalTime(getTime()), "yyyy-MM-dd-HH-mm-ss") & "-user" & session & ".pdf"
+  var filepath = "public/" & filename
+  var file = newFileStream(filepath, fmWrite)
+
+  result = nil
+  if not file.isNil:
+    var opts = makeDocOpt()
+    opts.addFontsPath("svc/fonts")
+    #opts.addImagesPath("svc/uploads-" & session)
+    #opts.addImagesPath("svc/uploads-" & session)
+    opts.addResourcesPath("svc/fonts")
+    #opts.addResourcesPath("svc/uploads-" & session)
+
+    var doc = initPDF(opts)
+
+    #doc.createPDF()
+    
+    doc.addPage(getSizeFromName("Letter"))
+    doc.draw_title("WINDGO AND STUFF (" & $actions.len & " actions)")
+
+    doc.setInfo(DI_TITLE, "WINDGO Documentation " & getDateStr())
+    doc.setInfo(DI_AUTHOR, "WINDGO, Inc.")
+    doc.setInfo(DI_SUBJECT, "WINDGO Documentation" & getDateStr())
+
+    doc.writePDF(file)
+    file.close()
+    
+    result = filename
 
 var
   redisClient: Redis
@@ -220,9 +267,9 @@ routes:
       # Add the fileList to the fileListTable for the current session.
       fileListTable.add(session_hash, fileList)
 
-      redirect"/order"
+      redirect"/order/" & $int(epochTime() * 1000.0)
 
-  get "/order":
+  get "/order/@thetime":
     use_session:
       let
         fileInfoList = sequtils.map(
@@ -244,7 +291,7 @@ routes:
 
       var
         fileList: seq[string]
-        fileActionList: seq[tuple[info: FileInfoRef, action: FileAction]]
+        fileActionList: FileActionSeq
         
       newSeq(fileList, order.len)
       newSeq(fileActionList, order.len)
@@ -274,8 +321,12 @@ routes:
               fileActionList[i] = (info: info, action: TextToPDFFileAction)
               echo "  -> text to PDF."
 
+      let
+        outputFile = gen_pdf(session_hash, fileActionList)
 
-      resp: "STUB"
+      fileListTable.del(session_hash)
+
+      redirect("/" & outputFile)
 
 
   #get "/@id":

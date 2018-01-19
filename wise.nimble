@@ -13,7 +13,7 @@ requires "redis >= 0.2.0"
 requires "emerald >= 0.2.2"
 requires "nimPDF >= 0.3.1"
 
-skipDirs = @["test", "bootstrap", "public"]
+skipDirs = @["test", "bootstrap", "public", "svc"]
 
 task tests, "Running all tests":
   exec "echo 'test/results/'`date +%Y%m%d-%H.%M.%S`'.test.txt' > tmp_filename"
