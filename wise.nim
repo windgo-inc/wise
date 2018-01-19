@@ -4,9 +4,33 @@ import sequtils, strutils, streams
 import tables, hashes, redis, emerald
 import asyncdispatch
 
+import nimPDF
+
+
+# VERSION
+
 const WISEMajorVersion = "0"
 const WISEMinorVersion = "1"
 const WISEVersion = WISEMajorVersion & "." & WISEMinorVersion
+
+
+# TYPES
+
+type
+  FileAction = enum
+    NoFileAction,
+    ImageToPDFFileAction,
+    TextToPDFFileAction
+
+  FileInfo = object
+    filename: string
+    mimetype: string
+    basename: string
+    extension: string
+    data: string
+
+  FileInfoRef = ref FileInfo
+
 
 var
   redisClient: Redis
@@ -113,23 +137,25 @@ proc docUploader(pageTitle: string) {.html_templ: page_template.} =
 proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_template.} =
   title = pageTitle
   replace content:
-    ul:
-      for filename in files:
-        li: pre: filename
+    p:
+      "Use the Up and Down buttons to choose the order of serialization for the final PDF."
+    ul(id="filelist"):
+      for i, filename in pairs(files):
+        li(id=["fileno", $i].join):
+          filename
+          "   "
+          span(id=["up", $i].join): "[Up ↑]"
+          "   "
+          span(id=["dn", $i].join): "[Down ↓]"
+
+    form(action="generate", `method`="post", enctype="application/x-www-form-urlencoded"):
+      input(`type`="hidden", name="order", value="", id="genorder")
+      input(`type`="submit", value="Generate PDF")
+    
   replace sync_assets:
     script(src="/reorder.js")
 
 # ROUTING
-
-type
-  FileInfo = object
-    filename: string
-    mimetype: string
-    basename: string
-    extension: string
-    data: string
-
-  FileInfoRef = ref FileInfo
 
 proc hashFileInfo(info: FileInfoRef, session_hash: string): string {.noSideEffect.} =
   let
@@ -209,6 +235,47 @@ routes:
 
       resp:
         genHtml("docPreview", pageTitle="WISE DS - Files Preview", files=filenameList)
+
+  post "/generate":
+    use_session:
+      let
+        order = request.params["order"].split(' ').map(parseInt)
+        inputFileList = fileListTable[session_hash]
+
+      var
+        fileList: seq[string]
+        fileActionList: seq[tuple[info: FileInfoRef, action: FileAction]]
+        
+      newSeq(fileList, order.len)
+      newSeq(fileActionList, order.len)
+
+      for i, j in pairs(order):
+        fileList[i] = inputFileList[j]
+
+      let
+        files = fileList.map(file_hash => fileTable[file_hash])
+
+      for i, info in pairs(files):
+        echo "FILE ", $i
+        echo "  filename:  ", info.filename
+        echo "  basename:  ", info.basename
+        echo "  extension: ", if info.extension.isNil: "(no extension)" else: info.extension
+        echo "  mimetype:  ", info.mimetype
+
+        case info.mimetype:
+          of "application/pdf":
+            fileActionList[i] = (info: info, action: NoFileAction)
+            echo "  -> no action."
+          else:
+            if info.mimetype.startsWith("image"):
+              fileActionList[i] = (info: info, action: ImageToPDFFileAction)
+              echo "  -> image to PDF."
+            else:
+              fileActionList[i] = (info: info, action: TextToPDFFileAction)
+              echo "  -> text to PDF."
+
+
+      resp: "STUB"
 
 
   #get "/@id":
