@@ -198,8 +198,14 @@ routes:
 
   get "/order":
     use_session:
-      let fileInfoList = sequtils.map(fileListTable[session_hash], file_hash => fileTable[file_hash])
-      let filenameList = sequtils.map(fileInfoList, info => info.filename & " - " & info.mimetype & " : Hash=" & info.hashFileInfo(session_hash))
+      let
+        fileInfoList = sequtils.map(
+          fileListTable[session_hash], file_hash => fileTable[file_hash])
+        filenameList = sequtils.map(
+          fileInfoList,
+          info => [info.filename,
+                   info.mimetype,
+                   "Hash=" & info.hashFileInfo(session_hash)].join(" : "))
 
       resp:
         genHtml("docPreview", pageTitle="WISE DS - Files Preview", files=filenameList)
