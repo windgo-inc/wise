@@ -267,7 +267,7 @@ routes:
       # Add the fileList to the fileListTable for the current session.
       fileListTable.add(session_hash, fileList)
 
-      redirect"/order/" & $int(epochTime() * 1000.0)
+      redirect("/order/" & $int(epochTime() * 1000.0))
 
   get "/order/@thetime":
     use_session:
