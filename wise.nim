@@ -24,6 +24,7 @@ type
 
   FileInfo = object
     rotatable: bool
+    rot_cw: bool
     title: string
     filename: string
     mimetype: string
@@ -96,7 +97,7 @@ proc draw_title(doc: Document, text:string) =
   #doc.drawRect(10,15,size.width.toMM - 20, size.height.toMM-25)
   doc.stroke()
 
-proc image_pdf(session: string, figname: string, inname: string, outname: string, no_rotate: bool = false): bool {.discardable.} =
+proc image_pdf(session: string, figname: string, inname: string, outname: string, no_rotate: bool = false, rot_cw: bool = false): bool {.discardable.} =
   var file = newFileStream(outname, fmWrite)
 
   result = false
@@ -145,9 +146,12 @@ proc image_pdf(session: string, figname: string, inname: string, outname: string
         x = fromIN(1.0).toMM + diff_w / 2.0
         y = fromPT(size.height.toPT - fromMM(10.0).toPT).toMM - diff_h / 2.0
 
-      if rot90:
+      if rot90 and not rot_cw:
         doc.rotate(90.0, x, y)
         doc.move(0.0, scl_w)
+      elif rot90 and rot_cw:
+        doc.rotate(-90.0, x, y)
+        doc.move(-scl_h, 0.0)
       doc.stretch(scale, scale, x, y)
       doc.drawImage(x, y, image)
     else:
@@ -184,7 +188,7 @@ proc prepress_pdf(session: string, actions: FileActionSeq): string =
     case what.action:
       of ImageToPDFFileAction:
         procs[i] = "touch " & thepath & ".nothing"
-        image_pdf(session, what.info.title, thepath & what.info.filename, results[i], not what.info.rotatable)
+        image_pdf(session, what.info.title, thepath & what.info.filename, results[i], not what.info.rotatable, what.info.rot_cw)
       of TextToPDFFileAction:
         procs[i] = [
           "cd ", quoteShell(thepath), " && ",
@@ -282,7 +286,6 @@ template get_session(): untyped =
       session_hash = start_session()
       session_id = parseInt(redisClient.get(sessionIdKey(session_hash)))
       session_new = true
-      setCookie("wisesession", session_hash, daysForward(90))
 
     (session_id, session_hash, session_new)
 
@@ -370,9 +373,9 @@ var fileListTable = initTable[string, seq[string]]()
 
 routes:
   get "/":
-    use_session:
-      resp:
-        genHtml("docUploader", pageTitle="Step 1 - Upload your files.")
+    setCookie("wisesession", start_session(), daysForward(90))
+    resp:
+      genHtml("docUploader", pageTitle="Step 1 - Upload your files.")
 
   post "/upload":
     use_session:
@@ -407,11 +410,13 @@ routes:
       let
         order = request.params["order"].split(' ').map(parseInt)
         canrot = request.params["canrot"].split(' ').map(x => bool(parseInt(x)))
+        revrot = request.params["revrot"].split(' ').map(x => bool(parseInt(x)))
         names = request.params["names"].split("#####")
         inputFileList = fileListTable[session_hash]
 
       echo order
       echo canrot
+      echo revrot
       echo names
 
       var
@@ -425,6 +430,7 @@ routes:
         fileList[i] = inputFileList[j]
         fileTable[fileList[i]].title = names[j]
         fileTable[fileList[i]].rotatable = canrot[j]
+        fileTable[fileList[i]].rot_cw = revrot[j]
 
       let
         files = fileList.map(file_hash => fileTable[file_hash])
@@ -439,6 +445,7 @@ routes:
         echo "  mimetype:  ", info.mimetype
         echo "  title:     ", info.title
         echo "  rotatable: ", info.rotatable
+        echo "  rot_cw:    ", info.rot_cw
 
         writeFile(upload_path(session_hash) & info.filename, info.data)
 

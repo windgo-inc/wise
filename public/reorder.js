@@ -2,6 +2,7 @@
 
 var figureNames = {};
 var figuresAllowRotate = {};
+var figuresRevRotate = {};
 
 function filenoToFigpropsId(theId) {
   return "fig-props" + theId.slice(6);
@@ -64,6 +65,12 @@ $(document).ready(function () {
       value: "Allow Fit Rotation"
     });
 
+    var $revrot = $('<input />', {
+      type: 'checkbox',
+      id: 'revrot'+li_id,
+      value: "Rotate CW"
+    });
+
     $opsdiv.append($('<span>').text("Figure Title: "));
     $opsdiv.append($theinput);
     $opsdiv.append($('<br>'));
@@ -71,12 +78,17 @@ $(document).ready(function () {
     $opsdiv.append(
       $('<label />', { 'for': 'rot'+li_id, text: "Allow Fit Rotation" })
     );
+    $opsdiv.append($revrot);
+    $opsdiv.append(
+      $('<label />', { 'for': 'revrot'+li_id, text: "Rotate CW" })
+    );
 
     $figproparea.html('');
     $figproparea.append($opsdiv);
 
     //$theinput.focus();
     $allowrot.prop('checked', true);
+    $revrot.prop('checked', false);
 
     $theinput.change(function () {
       figureNames[fig_no] = $(this).val();
@@ -86,8 +98,13 @@ $(document).ready(function () {
       figuresAllowRotate[fig_no] = $(this).prop('checked');
     });
 
+    $revrot.change(function () {
+      figuresRevRotate[fig_no] = $(this).prop('checked');
+    });
+
     figureNames[fig_no] = fileinfostr;
     figuresAllowRotate[fig_no] = true;
+    figuresRevRotate[fig_no] = false;
 
     $opsdiv.slideDown("slow");
   });
@@ -97,7 +114,7 @@ $(document).ready(function () {
       return $(this).attr('id');
     }).get();
 
-    var ids = [], names = [], canrot = [];
+    var ids = [], names = [], canrot = [], revrot = [];
 
     for (var i = 0; i < order.length; i++) {
       ids.push(order[i].slice(6));
@@ -111,14 +128,20 @@ $(document).ready(function () {
       names.push(escaped);
       if (figuresAllowRotate[i]) {
         canrot.push('1');
+        if (figuresRevRotate[i])
+          revrot.push('1');
+        else
+          revrot.push('0');
       } else {
         canrot.push('0');
+        revrot.push('0');
       }
     }
 
     var parts = "order=" + encodeURIComponent(ids.join(' '));
     parts = parts + "&names=" + encodeURIComponent(names.join('#####'));
     parts = parts + "&canrot=" + encodeURIComponent(canrot.join(' '));
+    parts = parts + "&revrot=" + encodeURIComponent(revrot.join(' '));
 
     $("#result-link").html('');
     $("#result-link").append($('<div>').text("Generating, please be patient."));
