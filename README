@@ -10,6 +10,7 @@ Not a secure service.
 Shouts:
  - jester - Dominik Picheta
  - emerald - flyx
+ - nimPDF - Andri Lim
 
 ISSUES
  - Firefox ignores caching requests, occasionally multiple back to back uploads
