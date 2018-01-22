@@ -23,6 +23,8 @@ type
     TextToPDFFileAction
 
   FileInfo = object
+    rotatable: bool
+    title: string
     filename: string
     mimetype: string
     basename: string
@@ -64,6 +66,9 @@ proc newFileInfo(x: var FileInfoRef, data: MultiDataValue) =
     x.extension = nil
     x.basename = filename
   x.data = data.body
+
+  x.title = x.basename
+  x.rotatable = true
 
 
 proc newFileInfo(data: MultiDataValue): FileInfoRef =
@@ -114,7 +119,12 @@ proc image_pdf(session: string, figname: string, inname: string, outname: string
 
     if not image.isNil:
       let
-        rot90: bool = (not no_rotate) and (image.width > image.height)
+        cli_h = size.height.toMM - 30.0
+        cli_w = fromIN(fromMM(size.width.toMM - 10.0).toIN - 1.0).toMM
+      
+        is_landscape: bool = image.width > image.height
+        is_too_wide: bool = image.width.float > fromMM(cli_w).toPT
+        rot90: bool = (not no_rotate) and is_landscape and is_too_wide
 
         imgw = float(if rot90: image.height else: image.width)
         imgh = float(if rot90: image.width  else: image.height)
@@ -122,9 +132,6 @@ proc image_pdf(session: string, figname: string, inname: string, outname: string
       doc.draw_title(figname)
 
       var
-        cli_h = size.height.toMM - 30.0
-        cli_w = size.width.toMM - 20.0
-      
         ws = fromMM(cli_w).toPT / imgw
         hs = fromMM(cli_h).toPT / imgh
         scale = min(1.0, min(ws, hs))
@@ -135,7 +142,7 @@ proc image_pdf(session: string, figname: string, inname: string, outname: string
         diff_w = cli_w - scl_w
         diff_h = cli_h - scl_h
 
-        x = 10.0 + diff_w / 2.0
+        x = fromIN(1.0).toMM + diff_w / 2.0
         y = fromPT(size.height.toPT - fromMM(10.0).toPT).toMM - diff_h / 2.0
 
       if rot90:
@@ -158,8 +165,12 @@ proc image_pdf(session: string, figname: string, inname: string, outname: string
 
 proc prepress_pdf(session: string, actions: FileActionSeq): string =
   let
-    outfile = "output-" & format(getLocalTime(getTime()), "yyyy-MM-dd-HH-mm-ss") & "-user" & session & ".pdf"
-
+    outfile = [
+      "user-" & session & "/",
+      format(getLocalTime(getTime()), "yyyy-MM-dd-HH-mm-ss"),
+      ".pdf"
+    ].join
+ 
   var procs: seq[string]
   var results: seq[string]
 
@@ -173,7 +184,7 @@ proc prepress_pdf(session: string, actions: FileActionSeq): string =
     case what.action:
       of ImageToPDFFileAction:
         procs[i] = "touch " & thepath & ".nothing"
-        image_pdf(session, what.info.basename, thepath & what.info.filename, results[i])
+        image_pdf(session, what.info.title, thepath & what.info.filename, results[i], not what.info.rotatable)
       of TextToPDFFileAction:
         procs[i] = [
           "cd ", quoteShell(thepath), " && ",
@@ -187,6 +198,7 @@ proc prepress_pdf(session: string, actions: FileActionSeq): string =
         results[i] = thepath & what.info.filename
 
   if execProcesses(procs) == 0:
+    createDir("public/user-" & session)
     discard execProcess([
       "gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile=",
       quoteShell("public/" & outfile),
@@ -265,6 +277,7 @@ template get_session(): untyped =
       session_hash = request.cookies["wisesession"]
       session_id = parseInt(redisClient.get(sessionIdKey(session_hash)))
       session_new = false
+      setCookie("wisesession", session_hash, daysForward(90))
     except:
       session_hash = start_session()
       session_id = parseInt(redisClient.get(sessionIdKey(session_hash)))
@@ -283,12 +296,25 @@ macro use_session(body: untyped): untyped =
 proc page_template(title: string, homeUrl: string) {.html_templ.} =
   html(lang="en"):
     head:
-      title: title
+      title: "WISE Document Compiler - " & title
+      
+      meta(http_equiv="Cache-Control", content="no-cache, no-store, must-revalidate")
+      meta(http_equiv="Pragma", content="no-cache")
+      meta(http_equiv="Expires", content="0")
+
+      link(href="/jquery-ui.min.css", rel="stylesheet"): ""
+      link(href="/jquery-ui.theme.min.css", rel="stylesheet"): ""
+
+      script(src="/jquery-3.3.1.min.js"): ""
+      script(src="/jquery-ui.min.js"): ""
+
+      style:
+        block style_ex: discard
+      block sync_assets: discard
     body:
       h1:
-        a(href=homeUrl): title
+        a(href=homeUrl): "WISE Document Compiler - " & title
       block content: discard
-      block sync_assets: discard
 
 
 proc docUploader(pageTitle: string) {.html_templ: page_template.} =
@@ -301,19 +327,34 @@ proc docUploader(pageTitle: string) {.html_templ: page_template.} =
 
 proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_template.} =
   title = pageTitle
+  replace style_ex: """
+    #filelist { list-style-type: none; margin: 0; padding: 0; }
+    """
+
   replace content:
-    p:
-      "Use the Up and Down buttons to choose the order of serialization for the final PDF."
+    #p:
+    #  "Use the Up and Down buttons to choose the order of serialization for the final PDF."
+    p: """
+      Click and drag the filenames to select the order and then click 'Generate'!
+      """
+
     ul(id="filelist"):
       for i, filename in pairs(files):
         li(id=["fileno", $i].join):
-          button(id=["up", $i].join): "[Up ↑]"
-          button(id=["dn", $i].join): "[Down ↓]"
-          filename
+          span(class="ui-icon ui-icon-arrowthick-2-n-s"): ""
+          span(id=["fig-props", $i].join, class="figure-props"): ""
+          span(class="uploaded-figure"): filename
+          span(class="figure-props-show"): ""
 
-    form(action="/generate", `method`="post", enctype="application/x-www-form-urlencoded"):
+          #button(id=["up", $i].join): "[Up ↑]"
+          #button(id=["dn", $i].join): "[Down ↓]"
+
+    br()
+    form(id="generateform", action="/generate", `method`="post", enctype="application/x-www-form-urlencoded"):
       input(`type`="hidden", name="order", value="", id="genorder")
       input(`type`="submit", value="Generate PDF")
+
+    `div`(id="result-link"): ""
     
   replace sync_assets:
     script(src="/reorder.js")
@@ -331,7 +372,7 @@ routes:
   get "/":
     use_session:
       resp:
-        genHtml("docUploader", pageTitle="WISE Documentation Serializer")
+        genHtml("docUploader", pageTitle="Step 1 - Upload your files.")
 
   post "/upload":
     use_session:
@@ -351,27 +392,27 @@ routes:
       # Add the fileList to the fileListTable for the current session.
       fileListTable.add(session_hash, fileList)
 
-      redirect("/order/" & $int(epochTime() * 10000.0))
-
-  get "/order/@thetime":
-    use_session:
       let
         fileInfoList = sequtils.map(
           fileListTable[session_hash], file_hash => fileTable[file_hash])
         filenameList = sequtils.map(
           fileInfoList,
-          info => [info.filename,
-                   info.mimetype,
-                   "Hash=" & info.hashFileInfo(session_hash)].join(" : "))
+          info => [info.filename, info.mimetype].join(" : "))
 
       resp:
-        genHtml("docPreview", pageTitle="WISE DS - Files Preview", files=filenameList)
+        genHtml("docPreview", pageTitle="Step 3 - Arrange your files.", files=filenameList)
 
   post "/generate":
     use_session:
       let
         order = request.params["order"].split(' ').map(parseInt)
+        canrot = request.params["canrot"].split(' ').map(x => bool(parseInt(x)))
+        names = request.params["names"].split("#####")
         inputFileList = fileListTable[session_hash]
+
+      echo order
+      echo canrot
+      echo names
 
       var
         fileList: seq[string]
@@ -382,6 +423,8 @@ routes:
 
       for i, j in pairs(order):
         fileList[i] = inputFileList[j]
+        fileTable[fileList[i]].title = names[j]
+        fileTable[fileList[i]].rotatable = canrot[j]
 
       let
         files = fileList.map(file_hash => fileTable[file_hash])
@@ -394,6 +437,8 @@ routes:
         echo "  basename:  ", info.basename
         echo "  extension: ", if info.extension.isNil: "(no extension)" else: info.extension
         echo "  mimetype:  ", info.mimetype
+        echo "  title:     ", info.title
+        echo "  rotatable: ", info.rotatable
 
         writeFile(upload_path(session_hash) & info.filename, info.data)
 
@@ -405,6 +450,13 @@ routes:
             if info.mimetype.startsWith("image"):
               fileActionList[i] = (info: info, action: ImageToPDFFileAction)
               echo "  -> image to PDF."
+              var
+                willrotate =
+                  if info.rotatable:
+                    "image may be rotated to fit."
+                  else:
+                    "image will not be rotated to fit."
+              echo "     ", willrotate
             else:
               fileActionList[i] = (info: info, action: TextToPDFFileAction)
               echo "  -> text to PDF."
@@ -413,9 +465,7 @@ routes:
       let
         outputFile = prepress_pdf(session_hash, fileActionList)
 
-      fileListTable.del(session_hash)
-
-      redirect("/" & outputFile)
+      resp: outputFile
 
 redisClient = redis.open()
 runForever()
