@@ -33,8 +33,50 @@ type
 
   FileActionSeq = seq[tuple[info: FileInfoRef, action: FileAction]]
 
+  MultiDataValue = tuple[fields: StringTableRef, body: string]
 
-# PDF GEN
+
+# FILEINFO
+
+proc hashFileInfo(info: FileInfoRef, session_hash: string): string {.noSideEffect.} =
+  let
+    filehash = [
+      session_hash,
+      info.filename,
+      info.mimetype,
+      info.data[0..min(311, info.data.len)]
+    ].join("//").hash
+
+  $(!$filehash)
+
+
+proc newFileInfo(x: var FileInfoRef, data: MultiDataValue) =
+  let filename = data.fields["filename"]
+  let extpos = filename.rfind('.')
+
+  new(x)
+  x.filename = filename
+  x.mimetype = data.fields["Content-Type"]
+  if extpos > -1:
+    x.extension = filename[extpos+1..^1]
+    x.basename = filename[0..<extpos]
+  else:
+    x.extension = nil
+    x.basename = filename
+  x.data = data.body
+
+
+proc newFileInfo(data: MultiDataValue): FileInfoRef =
+  newFileInfo(result, data)
+
+
+# MISC
+
+proc upload_path(session_hash: string): string =
+  "svc/uploads-" & session_hash & "/"
+
+
+# PDF PREPRESS
 
 proc draw_title(doc: Document, text:string) =
   let size = getSizeFromName("Letter")
@@ -45,39 +87,115 @@ proc draw_title(doc: Document, text:string) =
 
   doc.setRGBFill(0,0,0)
   doc.drawText(x, 10.0, text)
-  doc.setRGBStroke(0,0,0)
-  doc.drawRect(10,15,size.width.toMM - 20, size.height.toMM-25)
+  #doc.setRGBStroke(0,0,0)
+  #doc.drawRect(10,15,size.width.toMM - 20, size.height.toMM-25)
   doc.stroke()
 
-proc gen_pdf(session: string, actions: FileActionSeq): string =
-  var filename = "output-" & format(getLocalTime(getTime()), "yyyy-MM-dd-HH-mm-ss") & "-user" & session & ".pdf"
-  var filepath = "public/" & filename
-  var file = newFileStream(filepath, fmWrite)
+proc image_pdf(session: string, figname: string, inname: string, outname: string, no_rotate: bool = false): bool {.discardable.} =
+  var file = newFileStream(outname, fmWrite)
 
-  result = nil
+  result = false
   if not file.isNil:
     var opts = makeDocOpt()
+    let size = getSizeFromName("Letter")
+
     opts.addFontsPath("svc/fonts")
-    #opts.addImagesPath("svc/uploads-" & session)
+    opts.addImagesPath(".")
     #opts.addImagesPath("svc/uploads-" & session)
     opts.addResourcesPath("svc/fonts")
-    #opts.addResourcesPath("svc/uploads-" & session)
 
     var doc = initPDF(opts)
-
-    #doc.createPDF()
-    
     doc.addPage(getSizeFromName("Letter"))
-    doc.draw_title("WINDGO AND STUFF (" & $actions.len & " actions)")
+    
+    var
+      image = doc.loadImage(inname)
 
-    doc.setInfo(DI_TITLE, "WINDGO Documentation " & getDateStr())
+    echo inname
+
+    if not image.isNil:
+      let
+        rot90: bool = (not no_rotate) and (image.width > image.height)
+
+        imgw = float(if rot90: image.height else: image.width)
+        imgh = float(if rot90: image.width  else: image.height)
+
+      doc.draw_title(figname)
+
+      var
+        cli_h = size.height.toMM - 30.0
+        cli_w = size.width.toMM - 20.0
+      
+        ws = fromMM(cli_w).toPT / imgw
+        hs = fromMM(cli_h).toPT / imgh
+        scale = min(1.0, min(ws, hs))
+
+        scl_w = fromPT(imgw).toMM * scale
+        scl_h = fromPT(imgh).toMM * scale
+
+        diff_w = cli_w - scl_w
+        diff_h = cli_h - scl_h
+
+        x = 10.0 + diff_w / 2.0
+        y = fromPT(size.height.toPT - fromMM(10.0).toPT).toMM - diff_h / 2.0
+
+      if rot90:
+        doc.rotate(90.0, x, y)
+        doc.move(0.0, scl_w)
+      doc.stretch(scale, scale, x, y)
+      doc.drawImage(x, y, image)
+    else:
+      doc.draw_title("LOAD ERROR [" & inname & "]")
+
+    doc.setInfo(DI_TITLE, figname & " " & getDateStr())
     doc.setInfo(DI_AUTHOR, "WINDGO, Inc.")
     doc.setInfo(DI_SUBJECT, "WINDGO Documentation" & getDateStr())
 
     doc.writePDF(file)
     file.close()
     
-    result = filename
+    result = true
+
+
+proc prepress_pdf(session: string, actions: FileActionSeq): string =
+  let
+    outfile = "output-" & format(getLocalTime(getTime()), "yyyy-MM-dd-HH-mm-ss") & "-user" & session & ".pdf"
+
+  var procs: seq[string]
+  var results: seq[string]
+
+  let thepath = upload_path(session)
+  
+  newSeq(procs, actions.len)
+  newSeq(results, actions.len)
+
+  for i, what in pairs(actions):
+    results[i] = thepath & what.info.filename & ".pdf"
+    case what.action:
+      of ImageToPDFFileAction:
+        procs[i] = "touch " & thepath & ".nothing"
+        image_pdf(session, what.info.basename, thepath & what.info.filename, results[i])
+      of TextToPDFFileAction:
+        procs[i] = [
+          "cd ", quoteShell(thepath), " && ",
+          "wgmkpdf ",
+          quoteShell(what.info.basename), " ",
+          quoteShell(what.info.filename), " ",
+          quoteShell(what.info.filename & ".pdf")
+        ].join
+      else:
+        procs[i] = "touch " & thepath & ".nothing"
+        results[i] = thepath & what.info.filename
+
+  if execProcesses(procs) == 0:
+    discard execProcess([
+      "gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile=",
+      quoteShell("public/" & outfile),
+      " ",
+      results.map(quoteShell).join(" ")].join)
+
+    result = outfile
+  else:
+    raise newException(OSError, "Could not convert files to PDFs.")
 
 var
   redisClient: Redis
@@ -189,11 +307,9 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
     ul(id="filelist"):
       for i, filename in pairs(files):
         li(id=["fileno", $i].join):
+          button(id=["up", $i].join): "[Up ↑]"
+          button(id=["dn", $i].join): "[Down ↓]"
           filename
-          "   "
-          span(id=["up", $i].join): "[Up ↑]"
-          "   "
-          span(id=["dn", $i].join): "[Down ↓]"
 
     form(action="/generate", `method`="post", enctype="application/x-www-form-urlencoded"):
       input(`type`="hidden", name="order", value="", id="genorder")
@@ -202,46 +318,14 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
   replace sync_assets:
     script(src="/reorder.js")
 
+
 # ROUTING
-
-proc hashFileInfo(info: FileInfoRef, session_hash: string): string {.noSideEffect.} =
-  let
-    filehash = [
-      session_hash,
-      info.filename,
-      info.mimetype,
-      info.data[0..min(311, info.data.len)]
-    ].join("//").hash
-
-  $(!$filehash)
-
-type
-  MultiDataValue = tuple[fields: StringTableRef, body: string]
-
-proc newFileInfo(x: var FileInfoRef, data: MultiDataValue) =
-  let filename = data.fields["filename"]
-  let extpos = filename.rfind('.')
-
-  new(x)
-  x.filename = filename
-  x.mimetype = data.fields["Content-Type"]
-  if extpos > -1:
-    x.extension = filename[extpos+1..^1]
-    x.basename = filename[0..<extpos]
-  else:
-    x.extension = nil
-    x.basename = filename
-  x.data = data.body
-
-
-proc newFileInfo(data: MultiDataValue): FileInfoRef =
-  newFileInfo(result, data)
-
 
 # The keys to this table are made from a hash of the session, filename, and data.
 # The files are only stored transiently.
 var fileTable = initTable[string, FileInfoRef]()
 var fileListTable = initTable[string, seq[string]]()
+
 
 routes:
   get "/":
@@ -267,7 +351,7 @@ routes:
       # Add the fileList to the fileListTable for the current session.
       fileListTable.add(session_hash, fileList)
 
-      redirect("/order/" & $int(epochTime() * 1000.0))
+      redirect("/order/" & $int(epochTime() * 10000.0))
 
   get "/order/@thetime":
     use_session:
@@ -302,12 +386,16 @@ routes:
       let
         files = fileList.map(file_hash => fileTable[file_hash])
 
+      createDir("svc/uploads-" & session_hash)
+
       for i, info in pairs(files):
         echo "FILE ", $i
         echo "  filename:  ", info.filename
         echo "  basename:  ", info.basename
         echo "  extension: ", if info.extension.isNil: "(no extension)" else: info.extension
         echo "  mimetype:  ", info.mimetype
+
+        writeFile(upload_path(session_hash) & info.filename, info.data)
 
         case info.mimetype:
           of "application/pdf":
@@ -321,32 +409,14 @@ routes:
               fileActionList[i] = (info: info, action: TextToPDFFileAction)
               echo "  -> text to PDF."
 
+
       let
-        outputFile = gen_pdf(session_hash, fileActionList)
+        outputFile = prepress_pdf(session_hash, fileActionList)
 
       fileListTable.del(session_hash)
 
       redirect("/" & outputFile)
 
-
-  #get "/@id":
-  #  let (session_id, session_hash, session_new) = get_session()
-  #  echo session_id
-  #  echo session_hash
-  #  echo session_new
-  #  resp("Session " & $session_id & " coming from hash " & @"id" & " with cookie " & request.cookies["wisesession"])
-
-
-  #get "/":
-
-  #post "/upload":
-  #  var file = request.formData.getOrDefault("file")
-  #  writeFile("uploaded.txt", file.body)
-  #  discard execProcess("wgmkpdf 'Uploaded File' uploaded.txt uploaded.pdf", [])
-  #  var s = readFile("uploaded.pdf")
-  #  
-  #  attachment("uploaded.pdf")
-  #  resp(s)
 redisClient = redis.open()
 runForever()
 
