@@ -323,6 +323,26 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
 proc docUploader(pageTitle: string) {.html_templ: page_template.} =
   title = pageTitle
   replace content:
+    p: """
+       This is an on-line tool for internal use at WINDGO Research Laboratory
+       designed to help you document by combining a sequence of files in to
+       a single document quickly.
+       """
+    p: """
+       Start by uploading your files. Supported file formats are given in the
+       following list. Note that any files not explicitly supported will be
+       intepreted as plain text files. This design choice is driven by the
+       frequent need to assemble source files as part of documentation.
+       """
+    ul:
+      li: "Text (.txt)"
+      li: "Portable Document Format (.pdf)"
+      li: "Windows Bitmap Image Format (.bmp)"
+      li: "Portable Network Graphics Image Format (.png)"
+      li: "Joint Photographic Experts Group Image Format (.jpg|.jpeg)"
+      li: "Targa Image Format (.tga|.targa)"
+
+    h3: "Select Files"
     form(action="/upload", `method`="post", enctype="multipart/form-data"):
       input(`type`="file", name="uploaded_files[]", multiple=true)
       input(`type`="submit", value="Upload")
@@ -338,7 +358,9 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
     #p:
     #  "Use the Up and Down buttons to choose the order of serialization for the final PDF."
     p: """
-      Click and drag the filenames to select the order and then click 'Generate'!
+      Click and drag the filenames to select the order and then click
+      'Generate'! Please note that the figure title and rotation options apply
+      only to images.
       """
 
     ul(id="filelist"):
