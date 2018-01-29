@@ -25,6 +25,8 @@ function rotToFilenoId(theId) {
 }
 
 $(document).ready(function () {
+  $("#upload-form").attr('action', '/upload/' + (new Date()).getTime())
+
   $("#filelist").sortable();
   $("#filelist").disableSelection();
 
@@ -147,7 +149,7 @@ $(document).ready(function () {
     $("#result-link").append($('<div>').text("Generating, please be patient."));
     $.ajax({
       type: "POST",
-      url: "/generate",
+      url: "/generate/" + (new Date()).getTime(),
       data: "?" + parts,
       success: function (response_data) {
         var url = window.location.protocol + "//" + window.location.host + "/";

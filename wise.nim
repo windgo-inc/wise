@@ -343,7 +343,7 @@ proc docUploader(pageTitle: string) {.html_templ: page_template.} =
       li: "Targa Image Format (.tga|.targa)"
 
     h3: "Select Files"
-    form(action="/upload", `method`="post", enctype="multipart/form-data"):
+    form(id="upload-form", `method`="post", enctype="multipart/form-data"):
       input(`type`="file", name="uploaded_files[]", multiple=true)
       input(`type`="submit", value="Upload")
 
@@ -399,7 +399,7 @@ routes:
     resp:
       genHtml("docUploader", pageTitle="Step 1 - Upload your files.")
 
-  post "/upload":
+  post "/upload/@whichupload":
     use_session:
       var fileList: seq[string]
       newSeq(fileList, 0)
@@ -425,9 +425,9 @@ routes:
           info => [info.filename, info.mimetype].join(" : "))
 
       resp:
-        genHtml("docPreview", pageTitle="Step 3 - Arrange your files.", files=filenameList)
+        genHtml("docPreview", pageTitle="Step 2 - Arrange your files.", files=filenameList)
 
-  post "/generate":
+  post "/generate/@whichupload":
     use_session:
       let
         order = request.params["order"].split(' ').map(parseInt)
