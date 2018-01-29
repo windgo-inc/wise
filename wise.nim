@@ -455,7 +455,7 @@ routes:
       resp:
         genHtml("docPreview", pageTitle="Step 2 - Arrange your files.", files=filenameList)
 
-  post "/generate/@whichupload":
+  post "/generate/@whichgen":
     use_session:
       let
         order = request.params["order"].split(' ').map(parseInt)
