@@ -346,7 +346,9 @@ proc docUploader(pageTitle: string) {.html_templ: page_template.} =
   replace sync_assets:
     script(`type`="text/javascript"):
       """
-      $("#upload-form").attr('action', '/upload/' + (new Date()).getTime())
+      $(document).ready(function () {
+        $("#upload-form").attr('action', '/upload/' + (new Date()).getTime());
+      });
       """
   replace content:
     p: """
