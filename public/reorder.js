@@ -145,11 +145,14 @@ $(document).ready(function () {
     parts = parts + "&canrot=" + encodeURIComponent(canrot.join(' '));
     parts = parts + "&revrot=" + encodeURIComponent(revrot.join(' '));
 
+    var target_uri = "/generate/" + (new Date()).getTime()
+    console.log(target_uri)
+
     $("#result-link").html('');
     $("#result-link").append($('<div>').text("Generating, please be patient."));
     $.ajax({
       type: "POST",
-      url: "/generate/" + (new Date()).getTime(),
+      url: window.location.protocol + "//" + window.location.host + target_uri,
       data: "?" + parts,
       success: function (response_data) {
         var url = window.location.protocol + "//" + window.location.host + "/";
