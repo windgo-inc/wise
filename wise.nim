@@ -329,8 +329,8 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
       link(href="/jquery-ui.min.css", rel="stylesheet"): ""
       link(href="/jquery-ui.theme.min.css", rel="stylesheet"): ""
 
-      script(src="/jquery-3.3.1.min.js"): ""
-      script(src="/jquery-ui.min.js"): ""
+      script(`type`="text/javascript", src="/jquery-3.3.1.min.js"): ""
+      script(`type`="text/javascript", src="/jquery-ui.min.js"): ""
 
       style:
         block style_ex: discard
@@ -343,6 +343,11 @@ proc page_template(title: string, homeUrl: string) {.html_templ.} =
 
 proc docUploader(pageTitle: string) {.html_templ: page_template.} =
   title = pageTitle
+  replace sync_assets:
+    script(`type`="text/javascript"):
+      """
+      $("#upload-form").attr('action', '/upload/' + (new Date()).getTime())
+      """
   replace content:
     p: """
        This is an on-line tool for internal use at WINDGO Research Laboratory
