@@ -403,7 +403,7 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
           #button(id=["dn", $i].join): "[Down ↓]"
 
     br()
-    form(id="generateform", action="/generate", `method`="post", enctype="application/x-www-form-urlencoded"):
+    form(id="generateform", `method`="post", enctype="application/x-www-form-urlencoded"):
       input(`type`="hidden", name="order", value="", id="genorder")
       input(`type`="submit", value="Generate PDF")
 
