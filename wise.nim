@@ -14,7 +14,6 @@ const WISEMinorVersion = "1"
 const WISEVersion = WISEMajorVersion & "." & WISEMinorVersion
 
 
-
 # TYPES
 
 type
