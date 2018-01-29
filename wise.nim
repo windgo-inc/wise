@@ -420,12 +420,17 @@ proc docPreview(pageTitle: string, files: seq[string]) {.html_templ: page_templa
 var fileTable = initTable[string, FileInfoRef]()
 var fileListTable = initTable[string, seq[string]]()
 
+let
+  primaryHeaders = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0"
+  }
 
 routes:
   get "/":
     setCookie("wisesession", start_session(), daysForward(90))
-    resp:
-      genHtml("docUploader", pageTitle="Step 1 - Upload your files.")
+    resp(Http200, primaryHeaders, genHtml("docUploader", pageTitle="Step 1 - Upload your files."))
 
   post "/upload/@whichupload":
     use_session:
@@ -452,8 +457,7 @@ routes:
           fileInfoList,
           info => [info.filename, info.mimetype].join(" : "))
 
-      resp:
-        genHtml("docPreview", pageTitle="Step 2 - Arrange your files.", files=filenameList)
+      resp(Http200, primaryHeaders, genHtml("docPreview", pageTitle="Step 2 - Arrange your files.", files=filenameList))
 
   post "/generate/@whichgen":
     use_session:
@@ -522,7 +526,7 @@ routes:
       let
         outputFile = prepress_pdf(session_hash, fileActionList)
 
-      resp: outputFile
+      resp(Http200, primaryHeaders, outputFile)
 
 redisClient = redis.open()
 runForever()
