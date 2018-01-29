@@ -25,7 +25,7 @@ function rotToFilenoId(theId) {
 }
 
 $(document).ready(function () {
-  $("#upload-form").attr('action', '/generate/' + (new Date()).getTime());
+  $("#generateform").attr('action', '/generate/' + (new Date()).getTime());
 
   $("#filelist").sortable();
   $("#filelist").disableSelection();
